@@ -1,0 +1,361 @@
+const { ipcMain, BrowserWindow, app, Menu } = require("electron");
+const path = require("path");
+const url = require("url");
+
+//database connection
+const sqlite3 = require("sqlite3").verbose();
+
+let mainWin;
+function createMainWindow() {
+  mainWin = new BrowserWindow({
+    resizable: true,
+    title: "Login - Dhaka Restaurant",
+    minimizable: true,
+    fullscreenable: true,
+    modal: true,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+      enableRemoteModule: true,
+    },
+  });
+  mainWin.loadFile("assests/html/index.html");
+  mainWin.maximize();
+  mainWin.setMenuBarVisibility(false);
+}
+//Login page start here
+ipcMain.on("authenticated", (event, result) => {
+  var data = result;
+  var userEmail = data.email;
+  var password = data.password;
+  validateUser(userEmail, password);
+});
+
+function validateUser(userEmail, pass) {
+  const db = new sqlite3.Database("./database.sqlite");
+  const users = `SELECT email, password FROM user WHERE  email=? AND password=?`;
+  db.all(users, [userEmail, pass], (err, rows) => {
+    if (err) {
+      throw err;
+    }
+    rows.forEach((row) => {
+      if (row.email == userEmail && row.password == pass) {
+        mainWin.setMenuBarVisibility(true);
+        mainWin.webContents.openDevTools();
+        return mainWin.loadURL(`file://${__dirname}/assests/html/pos.html`);
+      }
+    });
+    var incorrect = "Password or email is incorrect";
+    mainWin.webContents.send("unauthenticatedReply", incorrect);
+  });
+  db.close((err) => {
+    if (err) {
+      return console.error(err.message);
+    }
+  });
+}
+// end of login page
+
+//start of create dynamic category,  displaying food  by category, displaying all food,and displayinf food when the page loaded
+
+ipcMain.on("categoryNamesLoaded", () => {
+  gettingCategoryByNames();
+});
+
+function gettingCategoryByNames() {
+  const db = new sqlite3.Database("./database.sqlite");
+  const categories = `SELECT * FROM food_category`;
+  db.all(categories, [], (err, rows) => {
+    if (err) {
+      throw err;
+    }
+    mainWin.webContents.send("categoryNamesReplySent", rows);
+  });
+
+  db.close((err) => {
+    if (err) {
+      return console.error(err.message);
+    }
+  });
+}
+
+ipcMain.on("categoryId", (evt, result) => {
+  var categoryId = result;
+  gettingfoodByCategory(categoryId);
+});
+
+function gettingfoodByCategory(cId) {
+  const db = new sqlite3.Database("./database.sqlite");
+
+  const foodsByCategory = `SELECT * FROM foods, food_category
+	WHERE foods.category_id= food_category.id
+  AND food_category.id = ?`;
+
+  db.all(foodsByCategory, [cId], (err, rows) => {
+    if (err) {
+      throw err;
+    }
+    mainWin.webContents.send("foodsByCategoryReplySent", rows);
+  });
+
+  db.close((err) => {
+    if (err) {
+      return console.error(err.message);
+    }
+  });
+}
+
+ipcMain.on("foodByALlCategory", () => {
+  gettingFoodByAllCategory();
+});
+function gettingFoodByAllCategory() {
+  const db = new sqlite3.Database("./database.sqlite");
+
+  const foodsByCategory = `SELECT * FROM foods`;
+
+  db.all(foodsByCategory, [], (err, rows) => {
+    if (err) {
+      throw err;
+    }
+    mainWin.webContents.send("foodsByAllCategoryReplySent", rows);
+  });
+
+  db.close((err) => {
+    if (err) {
+      return console.error(err.message);
+    }
+  });
+}
+
+ipcMain.on("foodOnPageLoaded", () => {
+  gettingFoodOnPageLoad();
+});
+function gettingFoodOnPageLoad() {
+  const db = new sqlite3.Database("./database.sqlite");
+
+  const foodsOnPageLoad = `SELECT * FROM foods`;
+
+  db.all(foodsOnPageLoad, [], (err, rows) => {
+    if (err) {
+      throw err;
+    }
+    mainWin.webContents.send("foodOnPageLoadedReplySent", rows);
+  });
+
+  db.close((err) => {
+    if (err) {
+      return console.error(err.message);
+    }
+  });
+} //POS page end here
+
+//food page start here
+//foods
+ipcMain.on("foodListLoaded", () => {
+  gettingFoodList();
+});
+function gettingFoodList() {
+  const db = new sqlite3.Database("./database.sqlite");
+
+  const foodList = `SELECT foods.id, food_category.name, foods.product_image,foods.product_name, foods.component, foods.product_vat, foods.products_is_active  FROM foods, food_category
+	WHERE foods.category_id = food_category.id`;
+
+  db.all(foodList, [], (err, rows) => {
+    if (err) {
+      throw err;
+    }
+    mainWin.webContents.send("foodsResultSent", rows);
+  });
+
+  db.close((err) => {
+    if (err) {
+      return console.error(err.message);
+    }
+  });
+}
+
+//food varient
+ipcMain.on("FoodVarient", () => {
+  gettingFoodVarientList();
+});
+function gettingFoodVarientList() {
+  const db = new sqlite3.Database("./database.sqlite");
+
+  const foodVarientList = `SELECT foods.id,varient.name, foods.product_name FROM varient, foods
+	WHERE varient.food_id = foods.id`;
+
+  db.all(foodVarientList, [], (err, rows) => {
+    if (err) {
+      throw err;
+    }
+    mainWin.webContents.send("foodVarientResultSent", rows);
+  });
+
+  db.close((err) => {
+    if (err) {
+      return console.error(err.message);
+    }
+  });
+}
+
+//food availability
+ipcMain.on("FoodAvailability", () => {
+  gettingFoodAvailabilityList();
+});
+function gettingFoodAvailabilityList() {
+  const db = new sqlite3.Database("./database.sqlite");
+
+  const foodAvailabilityList = `SELECT foods.id, foods.product_name, food_availability.avail_day, food_availability.avail_time 
+  FROM foods, food_availability
+	WHERE food_availability.food_id = foods.id`;
+
+  db.all(foodAvailabilityList, [], (err, rows) => {
+    if (err) {
+      throw err;
+    }
+    mainWin.webContents.send("foodAvailabilityResultSent", rows);
+  });
+
+  db.close((err) => {
+    if (err) {
+      return console.error(err.message);
+    }
+  });
+}
+//end of food page
+
+const menuTemplate = [
+  //start of view menu
+  {
+    label: "View",
+    submenu: [
+      {
+        label: "Foods...",
+        click: () => {
+          mainWin.loadURL(`file://${__dirname}/assests/html/food.html`);
+        },
+      },
+
+      {
+        label: "Food Add-ons...",
+        click: () => {
+          mainWin.loadURL(`file://${__dirname}/assests/html/food_addsOn.html`);
+        },
+      },
+
+      {
+        label: "Food Category...",
+        click: () => {
+          mainWin.loadURL(
+            `file://${__dirname}/assests/html/food_category.html`
+          );
+        },
+      },
+
+      {
+        label: "Tables...",
+        click: () => {
+          mainWin.loadURL(`file://${__dirname}/assests/html/food_table.html`);
+        },
+      },
+
+      {
+        label: "Customer Type...",
+        click: () => {
+          mainWin.loadURL(
+            `file://${__dirname}/assests/html/customer_type.html`
+          );
+        },
+      },
+
+      {
+        label: "Payment...",
+        click: () => {
+          mainWin.loadURL(`file://${__dirname}/assests/html/payment.html`);
+        },
+      },
+    ],
+  },
+
+  //Start of manage order menu
+  {
+    label: "Manage Order",
+    submenu: [
+      {
+        label: "Order...",
+        click: () => {
+          mainWin.loadURL(`file://${__dirname}/assests/html/order.html`);
+        },
+      },
+      {
+        label: "POS...",
+        click: () => {
+          mainWin.loadURL(`file://${__dirname}/assests/html/pos.html`);
+        },
+      },
+    ],
+  },
+
+  //Start of setting menu
+  {
+    label: "Setting",
+    submenu: [
+      {
+        label: "Application Setting...",
+        role: "Application Setting...",
+      },
+      {
+        label: "Synchronization...",
+        role: "Synchronization...",
+      },
+    ],
+  },
+
+  //Help
+  {
+    label: "Help",
+    submenu: [
+      {
+        label: "Learn More",
+        click: async () => {
+          const { shell } = require("electron");
+          await shell.openExternal("https://electronjs.org");
+        },
+      },
+    ],
+  },
+
+  //start of the development menu
+  {
+    label: "DevToolswithReload",
+    submenu: [
+      {
+        label: "DEV tools",
+        role: "toggleDevTools",
+      },
+      {
+        label: "Reload",
+        role: "reload",
+      },
+    ],
+  },
+];
+
+const menu = Menu.buildFromTemplate(menuTemplate);
+Menu.setApplicationMenu(menu);
+
+app.whenReady().then(() => {
+  createMainWindow();
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createMainWindow();
+    }
+  });
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
+});
